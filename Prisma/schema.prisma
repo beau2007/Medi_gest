@@ -1,0 +1,264 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// Modèle Patient
+model Patient {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  numeroDossier String   @unique
+  civilite      String
+  nom           String
+  prenom        String
+  dateNaissance DateTime
+  sexe          String
+  email         String?
+  telephone     String?
+  adresse       String?
+  ville         String?
+  codePostal    String?
+
+  // Relations
+  dossierMedical   DossierMedical?
+  rendezVous       RendezVous[]
+  hospitalisations Hospitalisation[]
+  prescriptions    Prescription[]
+  factures         Facture[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("patients")
+}
+
+// Dossier Médical
+model DossierMedical {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId          String   @unique @db.ObjectId
+  groupeSanguin      String?
+  poids              Float?
+  taille             Int?
+  allergies          String[]
+  antecedents        Json?
+  traitementsEnCours Json?
+  vaccinations       Json?
+  notes              String?
+  createdByEmail     String?  // email du médecin ayant créé le dossier
+
+  // Relations
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  consultations Consultation[]
+
+  @@map("dossiers_medicaux")
+}
+
+// Modèle Personnel
+model Personnel {
+  id           String  @id @default(auto()) @map("_id") @db.ObjectId
+  matricule    String  @unique
+  civilite     String
+  nom          String
+  prenom       String
+  email        String  @unique
+  passwordHash String
+  telephone    String?
+  specialite   String?
+  role         Role
+  statut       String  @default("actif")
+
+  // Relations
+  consultations    Consultation[]
+  prescriptions    Prescription[]
+  rendezVous       RendezVous[]
+  hospitalisations Hospitalisation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("personnel")
+}
+
+// Rendez-vous
+model RendezVous {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  patientId   String    @db.ObjectId
+  personnelId String    @db.ObjectId
+  dateHeure   DateTime
+  duree       Int       @default(30)
+  type        String
+  statut      StatutRdv @default(PLANIFIE)
+  motif       String?
+  notes       String?
+
+  // Relations
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  personnel    Personnel     @relation(fields: [personnelId], references: [id])
+  consultation Consultation?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rendezvous")
+}
+
+// Consultations
+model Consultation {
+  id               String @id @default(auto()) @map("_id") @db.ObjectId
+  rendezVousId     String @unique @db.ObjectId
+  dossierMedicalId String @db.ObjectId
+  personnelId      String @db.ObjectId
+
+  // Données de consultation
+  motifs         String[]
+  symptomes      String?
+  diagnostic     String?
+  observations   String?
+  prescriptions  Json?
+  examenPhysique Json?
+
+  // Relations CORRIGÉES
+  prescriptionsRel Prescription[] // Relation vers Prescription
+  rendezVous       RendezVous     @relation(fields: [rendezVousId], references: [id])
+  dossierMedical   DossierMedical @relation(fields: [dossierMedicalId], references: [id])
+  personnel        Personnel      @relation(fields: [personnelId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("consultations")
+}
+
+// Prescriptions
+model Prescription {
+  id             String  @id @default(auto()) @map("_id") @db.ObjectId
+  patientId      String  @db.ObjectId
+  personnelId    String  @db.ObjectId
+  consultationId String? @db.ObjectId
+
+  // Détails prescription
+  medicaments      Json
+  datePrescription DateTime  @default(now())
+  dateDebut        DateTime?
+  dateFin          DateTime?
+  instructions     String?
+  statut           String    @default("active")
+
+  // Relations
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  personnel    Personnel     @relation(fields: [personnelId], references: [id])
+  consultation Consultation? @relation(fields: [consultationId], references: [id])
+
+  @@map("prescriptions")
+}
+
+// Hospitalisations
+model Hospitalisation {
+  id            String                @id @default(auto()) @map("_id") @db.ObjectId
+  patientId     String                @db.ObjectId
+  medecinId     String                @db.ObjectId
+  numeroChambre String
+  numeroLit     String
+  dateAdmission DateTime
+  dateSortie    DateTime?
+  motif         String
+  diagnostic    String?
+  statut        StatutHospitalisation @default(EN_COURS)
+
+  // Relations
+  patient Patient   @relation(fields: [patientId], references: [id])
+  medecin Personnel @relation(fields: [medecinId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("hospitalisations")
+}
+
+// Facturation
+model Facture {
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String         @db.ObjectId
+  numeroFacture   String         @unique
+  dateFacturation DateTime       @default(now())
+  dateEcheance    DateTime?
+  montantTotal    Float
+  montantPaye     Float          @default(0)
+  statut          StatutPaiement @default(EN_ATTENTE)
+
+  // Détails facturation
+  items Json
+  notes String?
+
+  // Relations
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("factures")
+}
+
+// Stock et Pharmacie
+model Produit {
+  id           String      @id @default(auto()) @map("_id") @db.ObjectId
+  codeProduit  String      @unique
+  nom          String
+  type         TypeProduit
+  categorie    String
+  description  String?
+  prixAchat    Float?
+  prixVente    Float?
+  stockActuel  Int         @default(0)
+  stockMinimal Int         @default(10)
+  unite        String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("produits")
+}
+
+// ENUMS
+enum Role {
+  MEDECIN
+  INFIRMIER
+  TECHNICIEN_IMAGERIE
+  ADMINISTRATIF
+  TECHNICIEN_LABORATOIRE
+  SECRETAIRES
+  PHARMACIEN
+}
+
+enum StatutRdv {
+  PLANIFIE
+  CONFIRME
+  ANNULE
+  TERMINE
+  ABSENT
+}
+
+enum StatutHospitalisation {
+  EN_COURS
+  SORTIE
+  TRANSFERE
+}
+
+enum StatutPaiement {
+  EN_ATTENTE
+  PARTIELLEMENT_PAYE
+  PAYE
+  ANNULE
+  REMBOURSEMENT
+}
+
+enum TypeProduit {
+  MEDICAMENT
+  MATERIEL
+  CONSOMMABLE
+  EQUIPEMENT
+}
